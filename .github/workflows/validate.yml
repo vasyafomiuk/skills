@@ -1,0 +1,44 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON manifests
+        run: |
+          python3 -m json.tool .claude-plugin/marketplace.json > /dev/null
+          python3 -m json.tool java-playwright-e2e/.claude-plugin/plugin.json > /dev/null
+          echo "manifests OK"
+
+      - name: Validate SKILL.md frontmatter (name + description; name == folder)
+        run: |
+          python3 - <<'PY'
+          import sys, pathlib, re
+          fail = []
+          skills = sorted(pathlib.Path("java-playwright-e2e/skills").glob("*/SKILL.md"))
+          if not skills:
+              fail.append("no SKILL.md files found under java-playwright-e2e/skills/")
+          for skill in skills:
+              text = skill.read_text()
+              m = re.match(r"^---\n(.*?)\n---", text, re.S)
+              if not m:
+                  fail.append(f"{skill}: missing YAML frontmatter")
+                  continue
+              fm = m.group(1)
+              name = re.search(r'^name:\s*(.+)$', fm, re.M)
+              if not name:
+                  fail.append(f"{skill}: missing 'name'")
+              elif name.group(1).strip() != skill.parent.name:
+                  fail.append(f"{skill}: name '{name.group(1).strip()}' != folder '{skill.parent.name}'")
+              if not re.search(r'^description:', fm, re.M):
+                  fail.append(f"{skill}: missing 'description'")
+          if fail:
+              print("\n".join(fail)); sys.exit(1)
+          print(f"{len(skills)} SKILL.md files valid")
+          PY

@@ -13,7 +13,7 @@ description: >-
   rather than hardcoding connection strings. Project-agnostic — no
   application-specific schema assumptions.
 metadata:
-  version: "1.2"
+  version: "1.2.0"
   category: Test Automation
   tags: [database, persistence, repository, orm, data-provisioning, three-way-validation, audit-fields]
 ---
@@ -27,7 +27,7 @@ means the service *accepted* the request; only a row in the database confirms th
 *persisted* correctly with the right values, owner, and timestamps. This skill provides the
 repository/ORM abstraction tests query through, the setup helpers that provision preconditions,
 and the assertions that close three-way validation. For cross-cutting rules (stack/versions,
-DI, test isolation, test-integrity, naming/OOP) follow the orchestrator `java-playwright-e2e`.
+DI, test isolation, test-integrity, naming/OOP) follow the orchestrator (`java-playwright-e2e:orchestrator`).
 
 ## WHEN TO USE
 
@@ -36,7 +36,7 @@ DI, test isolation, test-integrity, naming/OOP) follow the orchestrator `java-pl
 - "Assert the audit fields" — `createdBy`, `updatedBy`, `createdAt`, `updatedAt`, status history.
 - "We have raw SQL strings scattered in step definitions" — extract into a repository.
 - "Provision test data in setup so the assertion never sees null."
-- "Complete the three-way validation" — input vs API response vs DB row all agree.
+- "Complete the DB leg of three-way validation" — input vs API response vs DB row all agree.
 - "Clean up the rows the test created."
 - "The DB connection string is hardcoded — read it from config/secrets."
 
@@ -115,11 +115,11 @@ Rules:
 public final class Database {
     private final DataSource ds;
 
-    public Database(Config cfg) {
+    public Database() {
         HikariConfig hc = new HikariConfig();
-        hc.setJdbcUrl(cfg.get("db.url"));            // key, not a literal
-        hc.setUsername(cfg.get("db.user"));
-        hc.setPassword(cfg.secret("db.password"));   // from env / secret manager at runtime
+        hc.setJdbcUrl(Config.get("db.url"));            // key, not a literal
+        hc.setUsername(Config.get("db.user"));
+        hc.setPassword(Config.secret("db.password"));   // from env / secret manager at runtime
         this.ds = new HikariDataSource(hc);
     }
 }
@@ -128,6 +128,7 @@ public final class Database {
 - Read URL/user/password **by key** from the per-environment config or secret manager. Never
   commit a connection string, host, or password; never inline them in a step or repository.
 - Point at a stable environment you own/control — see config/secrets in `e2e-framework-setup`.
+- The HikariCP and JDBC-driver dependencies (pinned versions) live in `e2e-framework-setup`'s pom.
 
 ## PROVISION TEST DATA IN SETUP — so assertions never null-guard
 
@@ -248,7 +249,7 @@ public void cleanupDb() {
 
 ## HANDOFF
 
-- **java-playwright-e2e** — orchestrator and single source of truth for stack/versions, DI,
+- **the orchestrator (`java-playwright-e2e:orchestrator`)** — single source of truth for stack/versions, DI,
   test isolation, test-integrity, and naming/OOP. Follow it for anything cross-cutting.
 - **rest-assured-api-tests** — pairs with this skill for three-way validation; it supplies the API
   response DTO you compare DB rows against, and the input side of create/update flows.

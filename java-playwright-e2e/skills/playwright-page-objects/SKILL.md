@@ -1,16 +1,18 @@
 ---
 name: playwright-page-objects
 description: >-
-  Discovers real, stable Playwright (Java) locators and builds annotation-driven
-  Page Objects from them. Use this skill when the user wants to: find or harden
-  element locators for a page, decide between getByRole / getByLabel / getByText /
-  getByTestId / CSS / XPath, fix strict-mode "resolved to N elements" errors, scope
-  a locator to a row/card/dialog with filter or nth, snapshot a page with Playwright
-  MCP or codegen to read the accessibility tree, design a Page Object with @FindBy /
-  @VerifyAt / @VerifyBy and a CommonPage base, or confirm the right page rendered
-  before acting. Project-agnostic — no application-specific assumptions.
+  Discovers real, stable Playwright (Java) locators for a Playwright+Cucumber suite
+  and builds annotation-driven Page Objects from them. Use this skill when the user
+  wants to: find or harden Playwright (Java) element locators for a page, decide
+  between getByRole / getByLabel / getByText / getByTestId / CSS / XPath, fix
+  strict-mode "resolved to N elements" errors, scope a locator to a row/card/dialog
+  with filter or nth, snapshot a page with Playwright MCP or codegen to read the
+  accessibility tree, read Playwright (Java) locators from a screenshot/HTML for the
+  Playwright+Cucumber suite, design a Page Object with @FindBy / @VerifyAt / @VerifyBy
+  and a CommonPage base, add axe-core accessibility assertions, or confirm the right
+  page rendered before acting. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.2"
+  version: "1.2.0"
   category: Test Automation
   tags: [playwright, locators, page-object, accessibility, selectors, codegen, playwright-mcp, strict-mode]
 ---
@@ -27,8 +29,8 @@ flaky tests is a badly chosen locator, so the whole job here is: discover from t
 real page, prefer attributes that survive markup churn, and encapsulate.
 
 Cross-cutting rules (stack/versions, web-first assertions, DI, test isolation,
-naming/OOP) live in the orchestrator **java-playwright-e2e** — this skill states each
-only as a one-line principle and points there.
+naming/OOP) live in the orchestrator (`java-playwright-e2e:orchestrator`) — this skill
+states each only as a one-line principle and points there.
 
 ## WHEN TO USE
 
@@ -74,7 +76,7 @@ Try each option in order; fall to the next only when the current one is unavaila
 ## STEP 2 — CHOOSE THE LOCATOR (priority order)
 
 Pick the highest option on this list that uniquely identifies the element. XPath is a
-last resort. This priority order is shared across the suite — see **java-playwright-e2e**.
+last resort. This priority order is shared across the suite — see the orchestrator.
 
 | # | Locator | Use for |
 |---|---------|---------|
@@ -147,7 +149,7 @@ breaks on any layout change; the scoped/filtered role chain above does not.
 Every page extends a shared base and declares locators as **private** annotated fields.
 Three annotations carry the metadata that generic steps and page-load verification need.
 Encapsulation rule (locators private, no leaking getters/setters) is shared — see
-**java-playwright-e2e**.
+the orchestrator.
 
 ```java
 @Retention(RUNTIME) @Target(FIELD)
@@ -202,12 +204,16 @@ Rules:
 - **All locators live in page objects** — never in feature files or step classes.
 - Locators are `private`; no `_` prefix, no getters/setters. Generic steps resolve fields
   by name; explicit-DI projects expose **behavioral methods** (`addNote(...)`), not the raw `Locator`.
+  A page may expose one read-only `Locator` accessor (e.g. `successToast()`) for the **service's**
+  web-first assertion — never expose a locator to a step or feature file.
 - One `@FindBy` per field, expressing a single chosen strategy from STEP 2. Set `all = true`
   for a list-valued locator the caller will iterate or count.
 - **Compose**, don't inflate: model a repeated card/row as its own small component page and
   build the screen from those, rather than one page with a hundred fields.
 - For a multi-field action, expose a method that takes a typed input object (a `record`),
   not a long primitive parameter list.
+- **Match existing page objects.** If the project already has page objects, ask for / read one
+  first and follow its base class, annotation usage, and naming rather than introducing a new style.
 
 ## STEP 5 — VERIFY THE PAGE BEFORE ACTING
 
@@ -225,8 +231,41 @@ public void waitForPageToLoad() {
 
 Use Playwright's **auto-retrying** `assertThat(...)` here (it polls until the condition
 holds), never a one-shot boolean getter. Web-first assertions are a shared convention —
-full rule in **java-playwright-e2e**. Call `waitForPageToLoad()` at the top of any service
+full rule in the orchestrator. Call `waitForPageToLoad()` at the top of any service
 flow that targets this page, before the first `fill`/`click`.
+
+## ACCESSIBILITY (axe-core)
+
+Locators built from roles and accessible names already lean on the a11y tree; axe-core
+turns that into an explicit assertion. Run a scan against the live `page` and fail the
+test on any violation, using the same web-first style as page verification. The axe-core
+Playwright dependency is pinned in **e2e-framework-setup**.
+
+```java
+import com.deque.html.axecore.playwright.AxeBuilder;
+import com.deque.html.axecore.results.AxeResults;
+
+AxeResults results = new AxeBuilder(page).analyze();
+assertTrue(results.getViolations().isEmpty(), results.getViolations().toString());
+```
+
+- **Scope** the scan to the region under test rather than the whole document:
+  ```java
+  AxeResults results = new AxeBuilder(page).include(List.of("main")).analyze();
+  ```
+- **Suppress** known, triaged issues instead of asserting on a noisy full result —
+  keep the suppression list short and reviewed:
+  ```java
+  AxeResults results = new AxeBuilder(page).disableRules(List.of("color-contrast")).analyze();
+  ```
+- **Tag** accessibility scenarios with `@a11y` so they can be run (or skipped) as a slice.
+- **Reuse** the scan behind one generic step backed by a service, so feature files stay
+  declarative and the AxeBuilder wiring lives in one place:
+  ```gherkin
+  Then User sees no accessibility violations on "TaskDetails" page
+  ```
+  The step resolves the named page and delegates to a service method that runs the
+  `AxeBuilder(page).analyze()` assertion above — no axe wiring in the step or feature file.
 
 ## ANTI-PATTERNS
 
@@ -239,8 +278,9 @@ flow that targets this page, before the first `fill`/`click`.
 
 ## HANDOFF
 
-- **java-playwright-e2e** (orchestrator) — the single source of truth for locator-priority,
-  encapsulation, web-first assertions, DI, and isolation. Defer there for any cross-cutting rule.
+- **the orchestrator (`java-playwright-e2e:orchestrator`)** — the single source of truth for
+  locator-priority, encapsulation, web-first assertions, DI, and isolation. Defer there for any
+  cross-cutting rule.
 - **create-test-scenarios** — upstream. Its Gherkin names elements (`"saveNote"`,
   `"successToast"`); your `@FindBy` field names should match those names so steps resolve cleanly.
 - **cucumber-step-definitions** — downstream consumer. Its services receive your page objects by

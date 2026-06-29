@@ -1,20 +1,19 @@
 ---
-name: java-playwright-e2e
+name: orchestrator
 description: >-
-  Entry point and orchestrator for building end-to-end test automation with Java
-  + Playwright + Cucumber (BDD), routing each request to a focused sub-skill. Use
-  this skill when the user wants to: bootstrap or build an end-to-end test
-  automation framework with Java + Playwright + Cucumber, stand up a new BDD
-  automation project, turn acceptance criteria or Jira tickets into a passing
-  automated test, or understand the overall workflow and shared conventions for
-  this stack. It owns the end-to-end workflow, the cross-cutting conventions every
-  sub-skill obeys, and a routing table that sends you to the right specialist skill
-  for writing scenarios, page objects, step definitions, API tests, database
-  validation, or framework setup. Start here when the intent is broad ("set up the
-  framework", "automate this story") and let it dispatch the deep how-to.
-  Project-agnostic — no application-specific assumptions.
+  START HERE for any Java + Playwright + Cucumber e2e request that isn't already
+  scoped to one phase — this skill plans the workflow and routes to the right
+  specialist. Use this skill when the user wants to: plan, route, or understand
+  the overall workflow and shared conventions for this stack; take an acceptance
+  criterion or Jira story all the way to a passing test (multi-phase); or diagnose
+  a flaky test and route it to the right layer. It owns the end-to-end workflow,
+  the cross-cutting conventions every sub-skill obeys, and a routing table that
+  sends you to the right specialist skill for writing scenarios, page objects,
+  step definitions, API tests, database validation, or framework setup. Start here
+  when the intent is broad ("plan the workflow", "automate this story") and let it
+  dispatch the deep how-to. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.2"
+  version: "1.2.0"
   category: Test Automation
   tags: [java, playwright, cucumber, bdd, gherkin, page-object, rest-assured, dependency-injection, e2e, orchestrator]
 ---
@@ -44,6 +43,17 @@ If the request is already narrow ("write the page object for the cart", "add the
 DB check"), you may jump straight to the matching sub-skill — but the conventions
 below still govern that work.
 
+## QUICKSTART
+
+1. **Install the plugin** (one-time):
+   ```
+   /plugin marketplace add vasyafomiuk/skills
+   /plugin install java-playwright-e2e@vasyafomiuk-skills
+   ```
+2. **On a fresh project, run `java-playwright-e2e:e2e-framework-setup` first** — it scaffolds the modules, gets `mvn test` green at 0 scenarios, and installs browsers.
+3. **Then run the CORE WORKFLOW loop below** — one story/feature per iteration.
+4. **See the worked example in EXAMPLE.md** (same folder) for a full AC -> passing-test walk-through.
+
 ## CORE WORKFLOW: Acceptance Criteria -> Passing Test
 
 Do one story/feature per iteration to keep context focused. Each step names the
@@ -51,7 +61,7 @@ sub-skill that owns its detailed how-to.
 
 ```
 1. Read AC        extract each acceptance criterion as a discrete, testable statement   [create-test-scenarios]
-2. Write feature  one Scenario per AC in Gherkin; reuse existing steps first            [create-test-scenarios]
+2. Write feature  one or more scenarios per AC in Gherkin; reuse existing steps first            [create-test-scenarios]
 3. Find locators  Playwright codegen / inspector / MCP snapshot (role/label first)      [playwright-page-objects]
 4. Build pages    Page Object with locators + web-first assertions                      [playwright-page-objects]
 5. Wire steps     thin glue -> service method -> page object; inject collaborators       [cucumber-step-definitions]
@@ -63,7 +73,7 @@ Framework scaffolding (modules, dependencies, runner, hooks, config, CI) is a
 prerequisite for step 1 on a fresh project and is owned by **e2e-framework-setup**.
 
 Rules for the loop:
-- **One Scenario per AC.** Cover that AC in one flow (setup -> action -> assertions); don't split one AC across scenarios.
+- **Cover every AC fully.** Use as many scenarios as the AC needs — usually one, more when it has distinct flows or roles; tag each with its AC id. Don't merge unrelated AC into one scenario.
 - Beyond the AC, add **negative/edge** scenarios to find bugs: invalid/empty/null input, boundaries, special chars, injection, unauthorized access, concurrency.
 - **Validate truthfully.** A failing test is a signal — investigate the cause, never weaken the assertion to force green.
 - **Validate against a source of truth.** A UI success toast is not proof; confirm the value via API and/or DB.
@@ -77,6 +87,7 @@ a row and hand off — see **## HANDOFF** for the connections.
 |-------------|-----------|---------|
 | "Turn this AC/Jira into feature files", write or refine Gherkin, add negative scenarios | **create-test-scenarios** | Convert acceptance criteria into declarative, well-tagged Gherkin scenarios and outlines. |
 | "Find the locators", "build the page object", harden flaky selectors | **playwright-page-objects** | Discover resilient locators and design annotation-driven Page Objects with web-first assertions. |
+| "Add axe-core a11y assertions", check accessibility on a page | **playwright-page-objects** | Add axe-core accessibility assertions alongside the Page Object's web-first checks. |
 | "Wire up the steps", glue Gherkin to code, set up DI / hooks | **cucumber-step-definitions** | Author thin step glue, the service layer, hooks, and DI (picocontainer). |
 | "Add API tests", validate responses, mock a third-party dependency | **rest-assured-api-tests** | Write REST Assured API and hybrid scenarios, three-way validation, and `page.route` mocking. |
 | "Verify it persisted", check the database, validate audit fields | **database-validation** | Confirm persistence via repository/ORM (no raw SQL) and reconcile DB with API/UI. |
@@ -88,10 +99,11 @@ Every sub-skill obeys these. They are stated here once; deeper detail is in the
 named sub-skill.
 
 ### Stack & versions
-JDK 17+, Playwright Java 1.5x–1.6x, Cucumber JVM 7.x with `cucumber-picocontainer`,
-one engine (JUnit 5 `junit-platform-suite` *or* `cucumber-testng`), REST Assured 5.x,
-Maven 3.9+ with `maven-surefire-plugin` 3.5+. Pin Playwright and keep it current —
-new versions track the latest browser builds. The **full version matrix and
+JDK 17+, Playwright Java 1.55.0, Cucumber JVM 7.20.1 with `cucumber-picocontainer`,
+one engine (JUnit 5 `junit-platform` 1.11.4 `junit-platform-suite` *or* `cucumber-testng`),
+REST Assured 5.5.0, Maven 3.9+ with `maven-surefire-plugin` 3.5.2. Known-good example
+versions — verify the current release on Maven Central and bump. Pin Playwright and keep
+it current — new versions track the latest browser builds. The **full version matrix and
 dependency declarations live in e2e-framework-setup.**
 
 ### Locator priority
@@ -141,7 +153,10 @@ With `cucumber-picocontainer` on the classpath, Cucumber builds and shares one
 instance of each collaborator **per scenario** and injects via constructors —
 steps stay thin and runs are parallel-safe. Cross-step data (current user, last
 API response, DB results) travels in an **injected, scenario-scoped
-`ScenarioContext`**, never global `static` state.
+`ScenarioContext`** with typed accessors (owned and shown in full by
+cucumber-step-definitions), never global `static` state. Configuration is the one
+exception: read it through the **static `Config`** helper (owned by
+e2e-framework-setup), never an injected instance.
 
 ```java
 public class TaskDetailsSteps {
@@ -191,6 +206,22 @@ This orchestrator dispatches to and connects the six sub-skills:
 - **cucumber-step-definitions** — owns step 5 and step 7 (thin glue, services, hooks, cleanup). Calls into page objects for UI and into rest-assured-api-tests / database-validation for verification.
 - **rest-assured-api-tests** — owns API scenarios and the API half of step 6 (three-way validation, mocking). Pairs with database-validation.
 - **database-validation** — owns the DB half of step 6 (persistence and audit-field checks). Confirms the source of truth behind every UI/API assertion.
+
+## TROUBLESHOOTING
+
+Common symptoms and where they belong. Reproduce, then route to the named sub-skill for the deep fix.
+
+| Symptom | Likely cause | Fix / route |
+|---------|--------------|-------------|
+| PicoContainer "cannot instantiate" / "Couldn't determine a valid component" | Two public constructors on a step/service class, or a cyclic dependency between injected collaborators | Give each injectable exactly one public constructor; break the cycle by moving shared state into `ScenarioContext` (-> cucumber-step-definitions). |
+| "step not found" / step prints as undefined or not glued | `cucumber.glue` package doesn't cover the step-definition package | Align `cucumber.glue` with the glue package in the runner/properties (-> e2e-framework-setup). |
+| Strict-mode error: locator "resolved to N elements" | Selector matches more than one node | Narrow with `.filter(...)`, `getByRole(name=...)`, or scoping (-> playwright-page-objects). |
+| Flaky parallel run — intermittent timeouts / cross-talk | A leaked `BrowserContext` not closed in `@After`; state bleeds between scenarios | Close the per-scenario `BrowserContext` in `@After`; one fresh context per scenario (-> cucumber-step-definitions). |
+| Browser launch fails on Linux CI ("missing libraries", host dependencies) | Playwright browsers installed without OS dependencies | Run the install with `--with-deps` on CI (-> e2e-framework-setup). |
+
+## END-TO-END EXAMPLE — see EXAMPLE.md in this folder
+
+A full AC -> passing-test walk-through (feature -> page object -> steps -> three-way verify) lives in **EXAMPLE.md** alongside this skill.
 
 The frozen **1.1.0** monolith remains available as the deep all-in-one reference
 at `java-playwright-cucumber-e2e/1.1.0/claude/SKILL.md` when you want every phase

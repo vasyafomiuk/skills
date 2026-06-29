@@ -3,15 +3,16 @@ name: rest-assured-api-tests
 description: >-
   Writes API-level and hybrid Cucumber scenarios with REST Assured, and mocks
   third-party dependencies with Playwright page.route. Use this skill when the
-  user wants to: write an API test, call a REST endpoint from a step, build a
+  user wants to: write an API-level Cucumber scenario (responses stored in
+  ScenarioContext), call a REST endpoint from a step, build a
   request with an auth header and a JSON body from a fixture, store and assert a
   Response, check a status code or response body, validate the exact error
-  message from an acceptance criterion, normalize dates before comparing, do
-  three-way validation (input vs API vs DB), cover a "UI-only" criterion at the
+  message from an acceptance criterion, normalize dates before comparing, assert
+  the input and API legs of three-way validation, cover a "UI-only" criterion at the
   API level, or stub/abort/modify an unstable external dependency so a UI test is
   deterministic. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.2"
+  version: "1.2.0"
   category: Test Automation
   tags: [rest-assured, api-testing, mocking, page-route, three-way-validation, contract, error-validation]
 ---
@@ -25,7 +26,7 @@ It also owns mocking unstable third-party dependencies with Playwright
 `page.route` so UI scenarios stay deterministic. You are invoked from
 `cucumber-step-definitions`; for cross-cutting rules (locator priority,
 web-first assertions, DI, isolation, naming) follow the orchestrator
-`java-playwright-e2e` — this skill states only the API/mocking how-to.
+(`java-playwright-e2e:orchestrator`) — this skill states only the API/mocking how-to.
 
 ## WHEN TO USE
 
@@ -52,7 +53,7 @@ sibling that produces each one:
 ## STEP 1 — Build the request (auth, content type, body from fixture)
 
 Keep one REST Assured wrapper in the framework `api/` package. Read base URL and
-token from `Config` (never hardcode; see `java-playwright-e2e`), and load bodies
+token from `Config` (never hardcode; see the orchestrator), and load bodies
 from versioned fixtures, not inline strings, so Gherkin stays declarative.
 
 ```java
@@ -161,7 +162,7 @@ Drive variants with a `Scenario Outline` so each invalid input maps to its exact
 documented error. Add negatives beyond the AC to hunt bugs: empty/null,
 boundaries, special chars, injection strings, unauthorized (401/403), wrong
 content type. Never weaken an assertion to make one pass — a real failure is a bug
-signal (rule owned by `java-playwright-e2e`).
+signal (rule owned by the orchestrator).
 
 ## STEP 5 — Normalize dates before comparing
 
@@ -254,7 +255,7 @@ Rules:
 - Glob match the URL (`**/api/...`); narrow enough to avoid catching unrelated calls.
 - Mock only what you don't own. Real, controlled endpoints should be tested for real.
 - Keep stub bodies in fixtures next to request fixtures, so they version together.
-- Routing is scenario-scoped; the per-scenario context teardown clears it (isolation rule owned by `java-playwright-e2e`).
+- Routing is scenario-scoped; the per-scenario context teardown clears it (isolation rule owned by the orchestrator).
 
 ## HANDOFF
 
@@ -265,5 +266,5 @@ Rules:
 - **create-test-scenarios** — produces the `@api` Gherkin scenarios you implement.
 - **e2e-framework-setup** — provides config/secrets (base URL, token) and the
   REST Assured dependency on the classpath.
-- **java-playwright-e2e** — orchestrator and single source of truth for shared
+- **the orchestrator (`java-playwright-e2e:orchestrator`)** — single source of truth for shared
   conventions (web-first assertions, DI, isolation, test integrity, naming).

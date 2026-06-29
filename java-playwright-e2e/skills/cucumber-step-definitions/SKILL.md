@@ -7,14 +7,15 @@ description: >-
   Java methods, wire up cucumber-picocontainer dependency injection, share state
   between steps with a ScenarioContext, build typed input objects or records from
   Cucumber DataTables, add @Before/@After hooks, manage the per-scenario browser
-  context/page lifecycle, attach screenshots or traces on failure, or refactor fat
-  steps into a thin-glue + service-layer design. Also use it when steps are flaky
-  under parallel execution, throw PicoContainer "cannot instantiate" errors, or
+  context/page lifecycle, attach screenshots or traces on failure, reuse login via
+  saved storageState, or refactor fat steps into a thin-glue + service-layer design.
+  Also use it when steps leak state or are flaky under parallel execution, throw
+  PicoContainer "cannot instantiate" errors, or
   leak state across scenarios. The runner and parallel-execution config itself
   live in e2e-framework-setup; this skill owns the hook bodies and per-scenario
   lifecycle. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.2"
+  version: "1.2.0"
   category: Test Automation
   tags: [cucumber, step-definitions, dependency-injection, picocontainer, hooks, scenario-context, service-layer, parallel]
 ---
@@ -29,8 +30,8 @@ collaborators it needs, push real logic and assertions down into a service layer
 and manage the per-scenario lifecycle so the whole thing runs parallel-safe. For
 cross-cutting rules (stack/versions, locator priority, web-first assertions,
 isolation, naming/OOP, test-integrity) defer to the orchestrator
-`java-playwright-e2e` — this skill states each in one line and spends its words on
-the step/DI/hook how-to.
+(`java-playwright-e2e:orchestrator`) — this skill states each in one line and spends
+its words on the step/DI/hook how-to.
 
 ## WHEN TO USE
 
@@ -77,7 +78,7 @@ of each collaborator **per scenario** and injects them through constructors. Ste
 services, hooks, the page holder, and the ScenarioContext are all plain classes
 with constructor parameters — never `new`-ed by you. Because instances are fresh
 per scenario, this is inherently parallel-safe (the isolation rule lives in
-`java-playwright-e2e`).
+the orchestrator).
 
 ```java
 public class TaskDetailsSteps {
@@ -145,17 +146,33 @@ response, a parsed DTO, a DB row), carry it in an **injected, scenario-scoped**
 holder — not global statics.
 
 ```java
-public class ScenarioContext {                  // injected per scenario
-    private final Map<String, Object> bag = new HashMap<>();
-    public void put(String key, Object value) { bag.put(key, value); }
+import io.restassured.response.Response;
+import java.util.*;
+
+/** Injected once per scenario (picocontainer); carries data between steps. A fresh
+ *  instance per scenario means no @After cleanup of the context itself is needed. */
+public class ScenarioContext {
+    private String currentUser;
+    private Response lastResponse;
+    private long recordId;
+    private final List<Long> createdNoteIds = new ArrayList<>();
+    private final Map<String, Object> bag = new HashMap<>();   // escape hatch for ad-hoc keys
+
+    public String currentUser()             { return currentUser; }
+    public void   setCurrentUser(String u)  { this.currentUser = u; }
+    public Response getResponse()           { return lastResponse; }
+    public void     setResponse(Response r) { this.lastResponse = r; }
+    public long recordId()                  { return recordId; }
+    public void setRecordId(long id)        { this.recordId = id; }
+    public List<Long> createdNoteIds()      { return createdNoteIds; }
+    public void put(String k, Object v)     { bag.put(k, v); }
     @SuppressWarnings("unchecked")
-    public <T> T get(String key) { return (T) bag.get(key); }
-    public boolean has(String key) { return bag.containsKey(key); }
+    public <T> T get(String k)              { return (T) bag.get(k); }
 }
 ```
 
 - A fresh instance per scenario means **no `@After` cleanup needed** and no bleed between scenarios — that is the whole point of preferring it over statics.
-- Prefer **typed accessors** (`setResponse`/`getResponse`) over a raw string-keyed map when the set of shared keys is known; the map form above is the escape hatch.
+- Prefer **typed accessors** (`setResponse`/`getResponse`, `setCurrentUser`/`currentUser`) over the raw string-keyed `bag` when the set of shared keys is known; the `put`/`get` map is the escape hatch for ad-hoc values.
 - If you must keep a legacy `static` API working under parallel execution, back it with `InheritableThreadLocal` and clear it in `@After`. New code: just inject `ScenarioContext`.
 
 ```java
@@ -196,7 +213,8 @@ Rules:
 - **Order with `order`** when sequencing matters: `@Before(order = 0)` runs before `@Before(order = 10)`; `@After` runs in reverse. Use it to seed data after the context exists.
 - Use a **`@BeforeAll`/`@AfterAll`** static hook (or the runner) for once-per-JVM cost like launching `Playwright`/`Browser`; share one `Browser` per thread, one **context per scenario**.
 - **Always `pages.close()` in `@After`** even on failure — a leaked context is the most common cause of slow, flaky parallel runs.
-- **Attach a screenshot on failure**; for deeper CI debugging, start a `Tracing` recording in `@Before` and `tracing.stop(... setPath(...))` + `s.attach(...)` in `@After` for failed scenarios, then open it in the Playwright trace viewer. Full trace/CI guidance lives in `e2e-framework-setup`.
+- **Attach a screenshot on failure**; for deeper debugging, record a Playwright trace and attach it on failure — see **TRACING & TRACE-VIEWER DEBUGGING** below, which owns the hook bodies. (`e2e-framework-setup` keeps only the CI artifact upload of the resulting zips.)
+- **Per-scenario `storageState` seeding** — a role-tagged scenario (`@admin`, `@viewer`) builds its context from a saved auth file instead of logging in through the UI: `browser.newContext(new Browser.NewContextOptions().setStorageStatePath(Paths.get("auth/admin.json")))`. The global login that writes those `auth/*.json` files once lives in `e2e-framework-setup`; here you only read them per scenario to reuse the session.
 
 ```java
 // PageHolder sketch — owns lifecycle, hands the same Page to every collaborator
@@ -208,17 +226,55 @@ public class PageHolder {
 
     public void open()  { ctx = browser.newContext(); page = ctx.newPage(); }
     public Page page()  { return page; }
+    public BrowserContext context() { return ctx; }         // used by the tracing hooks
+    public TaskDetailsPage taskDetails() { return new TaskDetailsPage(page); } // page object for this scenario (real projects use a generic page registry)
     public boolean hasPage() { return page != null; }
     public void close() { if (ctx != null) ctx.close(); }   // closing context closes its pages
 }
 ```
+
+## TRACING & TRACE-VIEWER DEBUGGING
+
+A Playwright trace is the highest-value artifact for diagnosing a failed scenario:
+it captures a step-by-step timeline with DOM snapshots, network, and console. This
+skill owns the tracing hook bodies; `e2e-framework-setup` only uploads the resulting
+zips as CI artifacts.
+
+Start the recording in `@Before` (after the context exists) and stop it in `@After`
+**only when the scenario failed** — recording on green runs is pure overhead.
+
+```java
+@Before("@ui or @e2e")
+public void startTrace(Scenario s) {
+    pages.context().tracing().start(new Tracing.StartOptions()
+        .setScreenshots(true).setSnapshots(true).setSources(true));
+}
+
+@After("@ui or @e2e")
+public void stopTrace(Scenario s) {
+    if (s.isFailed() && pages.hasPage()) {
+        Path zip = Paths.get("target/traces/" + safe(s.getName()) + ".zip");
+        pages.context().tracing().stop(new Tracing.StopOptions().setPath(zip));
+        s.attach(Files.readAllBytes(zip), "application/zip", "trace");   // surfaces in the report
+    } else {
+        pages.context().tracing().stop();                                // discard on success
+    }
+}
+
+private static String safe(String name) { return name.replaceAll("[^a-zA-Z0-9-]", "_"); }
+```
+
+- `setSnapshots(true)` enables the **DOM snapshots** that drive the viewer's time-travel; `setSources(true)` embeds the test source so each action links back to its line; `setScreenshots(true)` gives the filmstrip.
+- **Open a trace** at <https://trace.playwright.dev> (drag the zip in — runs locally, nothing uploaded), or from the CLI: `mvn exec:java -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="show-trace target/traces/x.zip"`.
+- **What to read in the viewer:** the **timeline/filmstrip** to find the action that stalled or failed; the **DOM snapshot** before/after that action to see what the page actually looked like (often a locator matched nothing or matched two); the **network** tab for a failed/slow request behind the symptom; the **console** tab for page-side JS errors.
+- Keep this hook separate from (or ordered after) the screenshot hook so the trace stop runs on the same failed-scenario path.
 
 ## THE SERVICE LAYER
 
 The service is where the action is orchestrated and where assertions live. It
 receives the page via the injected holder and uses **web-first, auto-retrying
 assertions** — `assertThat(locator)`, never boolean getters (full rule in
-`java-playwright-e2e`).
+the orchestrator).
 
 ```java
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
@@ -229,18 +285,16 @@ public class TaskDetailsService {
 
     public void addNote(InternalNote note) {
         TaskDetailsPage page = pages.taskDetails(); // page object from playwright-page-objects
-        page.noteTitle().fill(note.title());
-        page.noteContent().fill(note.content());
-        if (note.confidential()) page.confidential().check();
-        page.saveNote().click();
-        assertThat(page.successToast()).isVisible(); // web-first; waits & retries
+        page.waitForPageToLoad();                    // confirm the page rendered first
+        page.addNote(note);                          // page owns the fill/click (Playwright calls)
+        assertThat(page.successToast()).isVisible(); // service owns the web-first assertion
     }
 }
 ```
 
 Service rules:
 - One service per cohesive area of behavior; reuse it across many steps. **Don't put locators here** — call page-object methods.
-- Assertions are **meaningful and unconditional**: never wrap `assertThat` in `if (x != null)` — provision the data so the assertion always runs (integrity rule in `java-playwright-e2e`).
+- Assertions are **meaningful and unconditional**: never wrap `assertThat` in `if (x != null)` — provision the data so the assertion always runs (integrity rule in the orchestrator).
 - Use **soft assertions** when several checks should all report before the scenario fails; collect and assert at the end.
 - API steps delegate to a REST-Assured service (`rest-assured-api-tests`); persistence checks delegate to a repository service (`database-validation`). The step never calls those APIs directly.
 
@@ -251,7 +305,8 @@ packages** for an existing step that matches the Gherkin phrasing — duplicate 
 with near-identical regex are a common rot. Reuse a common step; if it's close,
 generalize it (e.g. parameterize with `{string}`) rather than cloning. Keep
 reusable, app-agnostic steps in the framework's common-steps package and
-suite-specific steps in the suite.
+suite-specific steps in the suite. If you can't see the project's existing glue, **ask the user
+for an example step class** and match its package layout, naming, and DI style before adding new steps.
 
 ## HANDOFF
 
@@ -259,5 +314,5 @@ suite-specific steps in the suite.
 - **`playwright-page-objects`** — owns locators and page-object methods. Your services call page methods; you never declare locators here. Missing page/locator -> hand off.
 - **`rest-assured-api-tests`** — API steps delegate to its REST-Assured services and `page.route` mocking; store the response in `ScenarioContext` for later steps.
 - **`database-validation`** — persistence-verification steps delegate to its repository/ORM services for three-way (input/API/DB) validation.
-- **`e2e-framework-setup`** — owns the runner, `cucumber.glue`, parallel config, tracing/CI, and where injectable packages must live. Go there for "step not found / not glued," parallelism, or trace-viewer setup.
-- **`java-playwright-e2e`** — orchestrator and single source of truth for DI, isolation, web-first assertions, naming/OOP, and test-integrity conventions referenced one-line above.
+- **`e2e-framework-setup`** — owns the runner, `cucumber.glue`, parallel config, the global login that writes `auth/*.json` storage-state files, CI artifact upload of trace zips, and where injectable packages must live. Go there for "step not found / not glued" or parallelism. (Trace recording and trace-viewer usage live in this skill.)
+- **the orchestrator (`java-playwright-e2e:orchestrator`)** — single source of truth for DI, isolation, web-first assertions, naming/OOP, and test-integrity conventions referenced one-line above.

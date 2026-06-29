@@ -7,14 +7,15 @@ description: >-
   Maven project structure or pom.xml, set up a multi-module skeleton (parent +
   framework + suites), add and pin Playwright/Cucumber/REST Assured dependencies,
   install Playwright browsers, configure a Cucumber runner (JUnit 5 platform
-  suite or TestNG), enable parallel execution, manage per-environment config and
-  secrets, or stand up a CI pipeline (GitHub Actions/GitLab) that runs the suite
-  headless on Linux with traces and reports. This is the prerequisite scaffold
-  every other test-authoring skill assumes already exists; hook bodies and the
-  per-scenario context lifecycle belong to cucumber-step-definitions.
+  suite or TestNG), enable parallel execution, configure cross-browser /
+  -Dbrowser execution, manage per-environment config and secrets, or stand up a
+  CI pipeline (GitHub Actions/GitLab) that runs the suite headless on Linux with
+  traces and reports. This is the prerequisite scaffold every other
+  test-authoring skill assumes already exists; hook bodies and the per-scenario
+  context lifecycle belong to cucumber-step-definitions.
   Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.2"
+  version: "1.2.0"
   category: Test Automation
   tags: [maven, scaffolding, junit5, testng, ci, parallel-execution, config, project-setup, playwright-install]
 ---
@@ -27,8 +28,8 @@ project, pinned dependencies, a working Cucumber runner, parallel execution,
 config/secrets, and CI. When you finish, `mvn test` runs zero scenarios green —
 the framework module compiles, a suite module exists, and Playwright browsers are
 installed. Cross-cutting conventions (locator priority, web-first assertions, DI,
-isolation, naming/OOP) live in the orchestrator **java-playwright-e2e** — this
-skill owns only the scaffold and the machinery that executes it.
+isolation, naming/OOP) live in the orchestrator (`java-playwright-e2e:orchestrator`) —
+this skill owns only the scaffold and the machinery that executes it.
 
 ## WHEN TO USE
 
@@ -45,16 +46,20 @@ Do NOT use this for authoring tests — once the scaffold runs, hand off (see HA
 
 ## STACK & VERSIONS (single source surfaced here; the orchestrator references this matrix)
 
+Known-good example versions — verify the current release on Maven Central and bump.
+
 | Component | Version | Notes |
 |-----------|---------|-------|
 | JDK | **17+** | Playwright Java requires 17 minimum; build fails on 11. |
-| Playwright Java | **1.5x – 1.6x** | `com.microsoft.playwright:playwright`; pin and keep current. |
-| Cucumber JVM | **7.x** (7.2x+) | `cucumber-java` + one engine (JUnit platform **or** TestNG). |
-| Cucumber DI | `cucumber-picocontainer` (7.x) | Lightest container; per-scenario instances make parallel safe. Spring is the heavier alternative. |
-| Test engine | `cucumber-junit-platform-engine` + `junit-platform-suite` **or** `cucumber-testng` | Pick exactly one. |
-| API | REST Assured **5.x** | `io.rest-assured:rest-assured`; API + hybrid scenarios. |
+| Playwright Java | **1.55.0** | `com.microsoft.playwright:playwright`; pin and keep current. |
+| Cucumber JVM | **7.20.1** | `cucumber-java` + one engine (JUnit platform **or** TestNG). |
+| Cucumber DI | `cucumber-picocontainer` (7.20.1) | Lightest container; per-scenario instances make parallel safe. Spring is the heavier alternative. |
+| Test engine | `cucumber-junit-platform-engine` + `junit-platform-suite` (1.11.4) **or** `cucumber-testng` | Pick exactly one. |
+| API | REST Assured **5.5.0** | `io.rest-assured:rest-assured`; API + hybrid scenarios. |
+| DB pool | HikariCP **6.2.1** (`com.zaxxer:HikariCP`) | Connection pool for database-validation. |
+| JDBC driver | postgresql **42.7.4** (`org.postgresql:postgresql`) | Swap for your DB (MySQL, etc.). |
 | Accessibility (optional) | axe-core Playwright (`com.deque.html.axe-core:playwright`) | Drop in only if a11y checks are wanted. |
-| Build | Maven 3.9+, `maven-surefire-plugin` 3.5+ | Node.js is pulled in transitively (Playwright drives it internally). |
+| Build | Maven 3.9+, `maven-surefire-plugin` **3.5.2** | Node.js is pulled in transitively (Playwright drives it internally). |
 
 Keep Playwright current — new versions track the latest browser builds and catch
 regressions early. Pin every version in `<properties>` so all modules agree.
@@ -104,13 +109,16 @@ Parent declares modules, the Java version, and pins all versions in
     <module>framework</module>
     <module>ui-suite</module>
   </modules>
+  <!-- Known-good example versions — verify the current release on Maven Central and bump. -->
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
-    <playwright.version>1.6x.0</playwright.version>
-    <cucumber.version>7.2x.0</cucumber.version>
-    <junit.platform.version>1.11.x</junit.platform.version>
-    <restassured.version>5.x.0</restassured.version>
-    <surefire.version>3.5.x</surefire.version>
+    <playwright.version>1.55.0</playwright.version>
+    <cucumber.version>7.20.1</cucumber.version>
+    <junit.platform.version>1.11.4</junit.platform.version>
+    <restassured.version>5.5.0</restassured.version>
+    <surefire.version>3.5.2</surefire.version>
+    <hikaricp.version>6.2.1</hikaricp.version>
+    <postgresql.version>42.7.4</postgresql.version>
   </properties>
 </project>
 ```
@@ -123,6 +131,9 @@ Dependencies (`framework` for shared libs; the suite adds the engine/runner deps
 <!-- DI for step/page collaborators (per-scenario instances → parallel-safe) -->
 <dependency><groupId>io.cucumber</groupId><artifactId>cucumber-picocontainer</artifactId><version>${cucumber.version}</version></dependency>
 <dependency><groupId>io.rest-assured</groupId><artifactId>rest-assured</artifactId><version>${restassured.version}</version></dependency>
+<!-- DB validation: connection pool + JDBC driver (swap postgresql for your DB) -->
+<dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId><version>${hikaricp.version}</version></dependency>
+<dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>${postgresql.version}</version></dependency>
 <!-- Engine: choose JUnit 5 platform suite ... -->
 <dependency><groupId>io.cucumber</groupId><artifactId>cucumber-junit-platform-engine</artifactId><version>${cucumber.version}</version><scope>test</scope></dependency>
 <dependency><groupId>org.junit.platform</groupId><artifactId>junit-platform-suite</artifactId><version>${junit.platform.version}</version><scope>test</scope></dependency>
@@ -155,11 +166,12 @@ point; configuration lives in `junit-platform.properties`.
 @Suite
 @IncludeEngines("cucumber")
 @SelectClasspathResource("features")
-@ConfigurationParameter(
-    key = GLUE_PROPERTY_NAME,
-    value = "com.example.automation.steps,com.example.automation.hooks")
 public class TestRunner { }
 ```
+
+Glue lives in `junit-platform.properties` only (`cucumber.glue=...`) — don't also
+set it via `@ConfigurationParameter(GLUE_PROPERTY_NAME, ...)` on the suite, or the
+two sources drift.
 
 `src/test/resources/junit-platform.properties`:
 ```
@@ -211,11 +223,16 @@ mvn test -Dbrowser=firefox                         # cross-browser
   *key name* or a `${ENV_VAR}` reference.
 
 ```java
+/** Loads application-<env>.properties; secrets come from env/secret-manager at runtime. */
 public final class Config {
     private static final Properties P = load(System.getProperty("env", "dev"));
-    public static String baseUrl()  { return P.getProperty("base.url"); }
-    public static boolean headless() { return Boolean.parseBoolean(P.getProperty("headless", "true")); }
-    public static String secret(String key) { return System.getenv(key); } // never from the file
+    private Config() {}
+    public static String  get(String key)    { return P.getProperty(key); }
+    public static String  secret(String key) { return System.getenv(key); }   // never from the file
+    public static String  baseUrl()          { return get("base.url"); }       // UI base URL
+    public static String  apiBaseUrl()       { return get("api.base.url"); }   // API base URL
+    public static String  token()            { return secret("API_TOKEN"); }
+    public static boolean headless()         { return Boolean.parseBoolean(get("headless")); }
 }
 ```
 
@@ -254,11 +271,64 @@ jobs:
 CI essentials:
 - `cache: maven` (or cache `~/.m2`) to skip re-downloading dependencies.
 - `install --with-deps` — the system libraries are required on bare Linux runners.
-- Capture **traces on first retry**, not always-on (traces are heavy); open them
-  in the Playwright trace viewer to debug failures.
-- Upload the Cucumber HTML report and traces with `if: always()`.
+- Capture **traces on first retry**, not always-on (traces are heavy); the
+  record/open how-to lives in **cucumber-step-definitions**.
+- Upload the Cucumber HTML report and traces with `if: always()` so they survive
+  as CI artifacts for download.
 - **Shard** large suites across runners (matrix on a tag/feature subset) instead
   of pushing thread count on one box.
+
+## RETRIES & FLAKY-TEST TRIAGE
+
+Reruns are what make the "traces on first retry" CI line above actually fire.
+Enable them with the Cucumber `rerun` plugin, which writes the failed scenarios to
+a file; a second suite re-runs only those.
+
+`junit-platform.properties` (append the rerun plugin):
+```
+cucumber.plugin=pretty, html:target/cucumber.html, json:target/cucumber.json, rerun:target/rerun.txt
+```
+
+A second `@Suite` re-runs only the failures from that file:
+```java
+@Suite
+@IncludeEngines("cucumber")
+@SelectFile(value = "@target/rerun.txt")   // re-run only the scenarios that failed
+public class RerunRunner { }
+```
+(TestNG equivalent: implement `IRetryAnalyzer` and attach it via an
+`IAnnotationTransformer` listener.)
+
+**Triage rule — a passing retry is a FLAKE SIGNAL, not a fix.** If a scenario
+fails then passes on rerun, do not treat green as resolved: tag it `@flaky`,
+exclude `@flaky` from the merge gate (`-Dcucumber.filter.tags="not @flaky"`), and
+capture the trace on the retry so the flake is debuggable. Quarantine, then fix
+the root cause — never leave silent auto-retries masking real defects.
+
+## AUTH REUSE (storageState)
+
+Logging in through the UI in every scenario is slow and flaky. Authenticate once
+in a one-time global setup, persist the session per role, and have contexts load
+it — no login steps in the bodies.
+
+```java
+// global setup: run once per role before the suite
+BrowserContext ctx = browser.newContext();
+Page page = ctx.newPage();
+// ... perform the login flow for this role ...
+ctx.storageState(new BrowserContext.StorageStateOptions()
+        .setPath(Paths.get("auth/admin.json")));   // repeat → auth/viewer.json, etc.
+ctx.close();
+```
+
+- Write one file per role: `auth/admin.json`, `auth/viewer.json`.
+- A context then starts authenticated:
+  `browser.newContext(new Browser.NewContextOptions().setStorageStatePath(Paths.get("auth/admin.json")))`.
+- **gitignore `auth/`** — these files hold live session tokens; never commit them.
+- Refresh the files when tokens expire (re-run global setup).
+
+Per-scenario seeding (tag-driven `@admin` / `@viewer` selection of which state to
+load) is shown in **cucumber-step-definitions**.
 
 ## INPUT-ACQUISITION FALLBACK
 
@@ -273,10 +343,10 @@ features → **create-test-scenarios**, pages → **playwright-page-objects**).
 
 Once `mvn test` runs green with zero scenarios and browsers are installed, the
 scaffold is done. Hand off:
-- **java-playwright-e2e** — the orchestrator; single source of truth for all
-  cross-cutting conventions (locator priority, web-first assertions, DI,
-  isolation, test-integrity, naming/OOP). It references the STACK & VERSIONS
-  matrix above. Return here when a new suite module is needed.
+- **the orchestrator (`java-playwright-e2e:orchestrator`)** — single source of
+  truth for all cross-cutting conventions (locator priority, web-first
+  assertions, DI, isolation, test-integrity, naming/OOP). It references the
+  STACK & VERSIONS matrix above. Return here when a new suite module is needed.
 - **create-test-scenarios** — turn Jira/AC into Gherkin feature files that drop
   into a suite's `resources/features/`.
 - **playwright-page-objects** — build the `@FindBy`/`@VerifyAt`/`@VerifyBy`

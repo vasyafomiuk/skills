@@ -10,7 +10,9 @@
       "name": "java-playwright-e2e",
       "source": "./java-playwright-e2e",
       "description": "Java + Playwright + Cucumber E2E test-automation suite: an orchestrator plus six focused sub-skills (scenarios, page objects, step definitions, API tests, database validation, framework setup).",
-      "version": "1.2.0"
+      "version": "1.2.0",
+      "category": "Test Automation",
+      "keywords": ["java", "playwright", "cucumber", "bdd", "gherkin", "e2e", "test-automation", "rest-assured", "page-object"]
     }
   ]
 }
