@@ -14,7 +14,7 @@ description: >-
   live in e2e-framework-setup; this skill owns the hook bodies and per-scenario
   lifecycle. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.0.0"
+  version: "1.2"
   category: Test Automation
   tags: [cucumber, step-definitions, dependency-injection, picocontainer, hooks, scenario-context, service-layer, parallel]
 ---

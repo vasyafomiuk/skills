@@ -11,7 +11,7 @@ description: >-
   API level, or stub/abort/modify an unstable external dependency so a UI test is
   deterministic. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.0.0"
+  version: "1.2"
   category: Test Automation
   tags: [rest-assured, api-testing, mocking, page-route, three-way-validation, contract, error-validation]
 ---

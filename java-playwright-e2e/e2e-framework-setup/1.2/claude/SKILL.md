@@ -14,7 +14,7 @@ description: >-
   per-scenario context lifecycle belong to cucumber-step-definitions.
   Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.0.0"
+  version: "1.2"
   category: Test Automation
   tags: [maven, scaffolding, junit5, testng, ci, parallel-execution, config, project-setup, playwright-install]
 ---

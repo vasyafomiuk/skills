@@ -14,7 +14,7 @@ description: >-
   framework", "automate this story") and let it dispatch the deep how-to.
   Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.2.0"
+  version: "1.2"
   category: Test Automation
   tags: [java, playwright, cucumber, bdd, gherkin, page-object, rest-assured, dependency-injection, e2e, orchestrator]
 ---

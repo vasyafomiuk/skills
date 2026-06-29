@@ -10,7 +10,7 @@ description: >-
   @VerifyAt / @VerifyBy and a CommonPage base, or confirm the right page rendered
   before acting. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.0.0"
+  version: "1.2"
   category: Test Automation
   tags: [playwright, locators, page-object, accessibility, selectors, codegen, playwright-mcp, strict-mode]
 ---

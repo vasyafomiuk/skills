@@ -13,7 +13,7 @@ description: >-
   rather than hardcoding connection strings. Project-agnostic — no
   application-specific schema assumptions.
 metadata:
-  version: "1.0.0"
+  version: "1.2"
   category: Test Automation
   tags: [database, persistence, repository, orm, data-provisioning, three-way-validation, audit-fields]
 ---

@@ -10,7 +10,7 @@ description: >-
   This is the spec-authoring step: it produces only feature files, not step definitions or page
   objects. Project-agnostic — no application-specific assumptions.
 metadata:
-  version: "1.0.0"
+  version: "1.2"
   category: Test Automation
   tags: [gherkin, cucumber, bdd, jira, acceptance-criteria, feature-files, test-design, scenario-outline]
 ---
