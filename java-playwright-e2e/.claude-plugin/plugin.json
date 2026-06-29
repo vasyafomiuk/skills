@@ -1,0 +1,23 @@
+{
+  "name": "java-playwright-e2e",
+  "description": "Java + Playwright + Cucumber (BDD) end-to-end test automation, decomposed into an orchestrator plus six focused skills: scenario authoring, page objects, step definitions, API tests, database validation, and framework setup.",
+  "version": "1.2.0",
+  "author": {
+    "name": "Vasyl Fomiuk",
+    "url": "https://github.com/vasyafomiuk"
+  },
+  "homepage": "https://github.com/vasyafomiuk/skills/tree/main/java-playwright-e2e",
+  "repository": "https://github.com/vasyafomiuk/skills",
+  "license": "MIT",
+  "keywords": [
+    "java",
+    "playwright",
+    "cucumber",
+    "bdd",
+    "gherkin",
+    "e2e",
+    "test-automation",
+    "rest-assured",
+    "page-object"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "vasyafomiuk-skills",
+  "owner": {
+    "name": "Vasyl Fomiuk",
+    "url": "https://github.com/vasyafomiuk"
+  },
+  "description": "Reusable Claude Code skills by Vasyl Fomiuk.",
+  "plugins": [
+    {
+      "name": "java-playwright-e2e",
+      "source": "./java-playwright-e2e",
+      "description": "Java + Playwright + Cucumber E2E test-automation suite: an orchestrator plus six focused sub-skills (scenarios, page objects, step definitions, API tests, database validation, framework setup).",
+      "version": "1.2.0"
+    }
+  ]
+}
